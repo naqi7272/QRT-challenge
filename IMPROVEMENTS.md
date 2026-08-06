@@ -113,10 +113,36 @@ Code sketch: `improvements.py :: UPGRADE 3` block.
 
 ---
 
-## Status / blocker
+## What has been verified vs. what still needs your data
 
-These are written against your `final_solution.py` objects and are drop-in, but they
-are **unvalidated here** — this environment has no ML stack and, more importantly, the
-shared Drive folder is missing `X_train_itDkypA.csv` and `X_test_Beg4ey3.csv` (the
-illiquid-return features). Add those two files and I can benchmark each upgrade's OOF
-delta before you spend an LB submission.
+`test_improvements.py` runs here (numpy / scikit-learn / lightgbm) on synthetic data
+and passes. It proves the **code** is correct and leak-safe:
+
+| Check | Result |
+|---|---|
+| Transductive PCA fits on train+test rows (X-only) | ✅ 400+150 rows, no labels used |
+| Upgrade-2 feature block has the expected `2K+2` shape | ✅ |
+| Val/test features are a pure function of **train-fold** stats (leak-safe by construction) | ✅ |
+| `beta_pred` captures the true linear map η | ✅ corr **0.923** real labels |
+| …and goes dead under label permutation (cannot fabricate OOF signal) | ✅ corr **−0.026** |
+
+What is **not** verified here is the **score gain** — that requires the real
+`X_train`/`X_test`, which cannot be pulled into this environment: the egress policy
+blocks `drive.google.com`, and the Drive connector returns file bytes as base64 into
+the model context (fine for KBs, impossible for the 531 MB / 228 MB feature files).
+
+## Run the OOF benchmark on your machine (where the data + baseline already live)
+
+```bash
+pip install numpy scikit-learn lightgbm   # + torch for Upgrade 3
+python test_improvements.py               # sanity-check the upgrade code first
+```
+
+Then wire the upgrades into `final_solution.py` per the header comments in
+`improvements.py`, and for each change, in order:
+
+1. same GroupKFold-by-`ID_DAY` splits → report OOF weighted accuracy;
+2. re-run your **label-permutation leak check** (must stay ≈0.51, esp. after Upgrade 2);
+3. submit to the LB; keep the change only if **OOF and LB both rise**.
+
+Paste the OOF deltas back and I'll help decide which upgrades are worth an LB slot.
